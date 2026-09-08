@@ -1,0 +1,9 @@
+pid:
+  kp: 2.5
+  ki: 0.8
+  kd: 0.3
+  setpoint: 0
+  limits:
+    min: -255
+    max: 255
+  sample_time: 0.01

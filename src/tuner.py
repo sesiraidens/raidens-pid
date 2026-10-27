@@ -238,3 +238,4 @@ def simulate_plant(output, gain=1.0, delay=0.1, noise=0.0):
         measurement += random.uniform(-noise, noise)
         
     return measurement
+

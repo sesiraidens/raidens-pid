@@ -1,14 +1,16 @@
 <div align="center">
 
-<img src="https://sesiraidens.github.io/portifolio/assets/logo_color-aNRVU26Y.png" width="80">
+<img src="https://sesiraidens.github.io/portifolio/assets/logo_color-aNRVU26Y.png" alt="Logo RAIDENS" width="140">
 
 # raidens-pid
 
-Implementacoes de controlador PID para navegacao autonoma de robos.
+**Controladores PID em Python para navegação autônoma de robôs**
 
-![Python](https://img.shields.io/badge/Python-3776AB?style=flat&logo=python&logoColor=white)
-![License](https://img.shields.io/badge/License-MIT-d9333b?style=flat)
-![Status](https://img.shields.io/badge/Status-Active-2ea043?style=flat)
+![Python](https://img.shields.io/badge/Python-3.8%2B-3776AB?style=flat-square&logo=python&logoColor=white)
+![Sem dependências](https://img.shields.io/badge/depend%C3%AAncias-nenhuma-2EA043?style=flat-square)
+![Licença MIT](https://img.shields.io/badge/Licen%C3%A7a-MIT-D9333B?style=flat-square)
+
+[Sobre](#sobre) · [Instalação](#instalação) · [Uso](#uso) · [Sintonia](#sintonia-dos-ganhos) · [Exemplos](#exemplos)
 
 </div>
 
@@ -16,167 +18,145 @@ Implementacoes de controlador PID para navegacao autonoma de robos.
 
 ## Sobre
 
-O **raidens-pid** implementa controladores PID (Proporcional, Integral, Derivativo) para tarefas comuns de robotica: seguir linha, manter distancia e manter angulo.
+O **raidens-pid** reúne os controladores que a equipe RAIDENS usa para seguir linha, manter distância de parede e segurar o ângulo do robô. A ideia é ter um único lugar com implementações testadas, comentadas e com ganhos de partida, para que ninguém precise reescrever um PID do zero antes de cada competição.
 
-### Como funciona o PID
+O PID calcula a correção a partir de três termos:
 
-O PID calcula uma saida de controle baseada em tres termos:
+| Termo | O que faz | Na prática |
+|---|---|---|
+| **P** · Proporcional | Reage ao erro atual | Erro grande, correção grande |
+| **I** · Integral | Acumula o erro passado | Elimina o erro que sobra quando o robô "quase" chega |
+| **D** · Derivativo | Olha a tendência do erro | Amortece a resposta e reduz o overshoot |
 
-- **P (Proporcional):** Reage ao erro atual. Se o erro e grande, a correcao e grande.
-- **I (Integral):** Acumula erros passados. Elimina erro estacionario que o P nao resolve.
-- **D (Derivativo):** Preve tendencias do erro. Suaviza a resposta e reduz overshoot.
+```text
+saída = Kp · erro + Ki · ∫erro dt + Kd · d(erro)/dt
+```
 
-**Formula:** saida = Kp * erro + Ki * integral(erro) + Kd * derivada(erro)
+## Destaques
 
----
+- **PID avançado** com anti-windup, filtro no termo derivativo, derivada sobre a medição e limite de taxa de variação
+- **PID em cascata** para sistemas de dois estágios, com fábricas prontas para distância e linha
+- **Sintonia automática** pelo método de Ziegler-Nichols
+- **Configurações em YAML** com ganhos de partida para cada tarefa
+- **Zero dependências**: só a biblioteca padrão do Python
 
-## Estrutura
+## Instalação
 
-`
-raidens-pid/
-├── src/
-│   ├── pid.py              # PID basico
-│   ├── pid_advanced.py     # PID com anti-windup e filtros
-│   ├── cascade_pid.py      # PID em cascade (duas camadas)
-│   ├── tuner.py            # Sintonizacao automatica
-│   └── __init__.py
-├── examples/
-│   ├── seguidor_de_linha.py
-│   ├── controlador_de_distancia.py
-│   └── controlador_de_angulo.py
-├── configs/
-│   ├── pid_linha.yaml
-│   └── pid_parede.yaml
-└── README.md
-`
+```bash
+git clone https://github.com/sesiraidens/raidens-pid.git
+cd raidens-pid
+```
 
----
+Não há pacotes para instalar. Rode os scripts a partir da raiz do repositório para que o pacote `src` seja encontrado.
 
-## Modulos
+## Uso
 
-### pid.py - PID Basico
+### PID avançado
 
-`python
-from src.pid import PID
-
-pid = PID(kp=2.5, ki=0.8, kd=0.3, setpoint=0)
-saida = pid.compute(medicao)
-`
-
-**Metodos:**
-- compute(measurement) - Calcula saida PID
-- eset() - Zera acumuladores
-- set_gains(kp, ki, kd) - Atualiza ganhos
-- set_limits(min, max) - Define limites de saida
-- get_components(measurement) - Retorna P, I, D separados
-
-### pid_advanced.py - PID Avancado
-
-Adiciona funcionalidades ao PID basico:
-
-- **Anti-windup:** Limita acumulador integral para evitar saturacao
-- **Filtro derivativo:** Suaviza o termo D para reduzir ruido
-- **Derivative on measurement:** Calcula D sobre medicao ao inves de erro
-- **Rate limit:** Limita velocidade de variacao da saida
-
-`python
+```python
 from src.pid_advanced import PIDAdvanced
 
-pid = PIDAdvanced(kp=2.0, ki=0.5, kd=0.2)
-pid.set_integral_limits(-50, 50)
-pid.set_derivative_filter(0.3)
-pid.set_rate_limit(30)
-`
+pid = PIDAdvanced(kp=2.0, ki=0.5, kd=0.2, setpoint=0)
+pid.set_limits(-255, 255)           # saturação da saída
+pid.set_integral_limits(-50, 50)    # anti-windup
+pid.set_derivative_filter(0.3)      # suaviza o termo D
+pid.set_rate_limit(30)              # variação máxima por ciclo
 
-### cascade_pid.py - PID em Cascade
+saida = pid.compute(medicao)
+p, i, d = pid.get_components(medicao)
+```
 
-Duas camadas de controle para sistemas de dois estagios.
+### PID em cascata
 
-`python
+A malha externa decide *o que* o robô quer (por exemplo, a velocidade para chegar à distância certa) e a malha interna decide *como* chegar lá (o PWM do motor).
+
+```python
 from src.cascade_pid import create_distance_controller
 
-controller = create_distance_controller()
+controller = create_distance_controller(kp=2.0, ki=0.5, kd=0.2)
 saida = controller.compute(distancia_parede, velocidade_motor)
-`
+```
 
-**Exemplos:**
-- create_distance_controller() - Controle de distancia de parede
-- create_line_controller() - Seguidor de linha
+Também existe `create_line_controller()` para seguidor de linha.
 
-### tuner.py - Sintonizacao Automatica
+### Sintonia automática
 
-Metodo de Ziegler-Nichols para encontrar ganhos otimos.
-
-`python
-from src.tuner import PIDTuner
+```python
+from src.tuner import PIDTuner, simulate_plant
 
 tuner = PIDTuner(setpoint=0)
-pid = tuner.auto_tune(plant_func, method="PID")
-`
+pid = tuner.auto_tune(simulate_plant, method="PID")
+```
 
-**Procedimento:**
-1. Aumenta Kp ate oscilacao sustentada (Ku)
-2. Mede periodo de oscilacao (Tu)
-3. Calcula ganhos: Kp=0.6*Ku, Ki=2*Ku/Tu, Kd=Ku*Tu/8
+## Sintonia dos ganhos
 
----
+O `PIDTuner` aumenta o Kp até a resposta oscilar de forma sustentada (ganho crítico **Ku**), mede o período dessa oscilação (**Tu**) e aplica a tabela de Ziegler-Nichols:
 
-## Tabelas de Ganhos
-
-### Ziegler-Nichols
-
-| Metodo | Kp | Ki | Kd |
+| Método | Kp | Ki | Kd |
 |---|---|---|---|
-| P | 0.5 * Ku | - | - |
-| PI | 0.45 * Ku | 1.2 * Kp / Tu | - |
-| PID | 0.6 * Ku | 2 * Kp / Tu | Kp * Tu / 8 |
+| P | 0,5 · Ku | | |
+| PI | 0,45 · Ku | 1,2 · Kp / Tu | |
+| PID | 0,6 · Ku | 2 · Kp / Tu | Kp · Tu / 8 |
 
-### Ganhos Recomendados
+### Ganhos de partida
 
-| Aplicacao | Kp | Ki | Kd |
-|---|---|---|---|
-| Seguidor de linha | 2.5 | 0.8 | 0.3 |
-| Controle de distancia | 2.0 | 0.5 | 0.2 |
-| Controle de angulo | 3.0 | 0.5 | 1.0 |
+Valores que funcionaram bem nos nossos robôs. Use como ponto de partida e ajuste na pista.
 
----
+| Aplicação | Kp | Ki | Kd | Arquivo |
+|---|---|---|---|---|
+| Seguidor de linha | 2,5 | 0,8 | 0,3 | `configs/pid_linha.yaml` |
+| Distância de parede | 2,0 | 0,5 | 0,2 | `configs/pid_parede.yaml` |
+| Controle de ângulo | 3,0 | 0,5 | 1,0 | |
 
 ## Exemplos
 
-### Seguidor de Linha
+Todos os exemplos simulam o robô no terminal, então dá para testar a lógica sem hardware.
 
-`ash
-python examples/seguidor_de_linha.py
-`
+| Comando | O que demonstra |
+|---|---|
+| `python examples/seguidor_de_linha.py` | Robô com 5 sensores IR seguindo uma linha preta |
+| `python examples/controlador_de_distancia.py` | Manter 30 cm da parede com PID avançado e anti-windup |
+| `python examples/controlador_de_angulo.py` | Segurar a orientação em 0° com controle diferencial dos motores |
 
-Simula robo com 5 sensores IR seguindo linha preta. PID ajusta direcao dos motores.
+## Estrutura
 
-### Controle de Distancia
+```text
+raidens-pid/
+├── src/          # Controladores: básico, avançado, cascata e sintonizador
+├── examples/     # Simulações prontas para rodar
+└── configs/      # Ganhos de partida em YAML
+```
 
-`ash
-python examples/controlador_de_distancia.py
-`
+## Ecossistema RAIDENS
 
-Simula robo mantendo 30cm de distancia de parede. Usa PID avancado com anti-windup.
+Este repositório faz parte de um conjunto de bibliotecas da equipe. Elas usam os mesmos nomes de classes e convenções, então o que você aprende em uma serve nas outras.
 
-### Controle de Angulo
-
-`ash
-python examples/controlador_de_angulo.py
-`
-
-Simula robo mantendo orientacao de 0 graus. Usa controle diferencial de motores.
+| Repositório | Para quê |
+|---|---|
+| [`raidens-python`](https://github.com/sesiraidens/raidens-python) | Biblioteca principal em Python: sensores, motores e robôs prontos (seguidor, parede, resgate) |
+| [`raidens-arduino`](https://github.com/sesiraidens/raidens-arduino) | As mesmas abstrações em C++ para rodar direto no Arduino |
+| [`raidens-sensores`](https://github.com/sesiraidens/raidens-sensores) | Catálogo completo de sensores com calibração e filtragem |
+| [`raidens-motores`](https://github.com/sesiraidens/raidens-motores) | Motores DC, servo, passo, driver L298N e rodas mecanum |
+| [`raidens-opencv`](https://github.com/sesiraidens/raidens-opencv) | Visão computacional: cores, linhas e navegação por câmera |
+| [`raidens-lab`](https://github.com/sesiraidens/raidens-lab) | Calibração interativa de cores em HSV e LAB |
+| [`raidens-obr`](https://github.com/sesiraidens/raidens-obr) | Robô completo para a OBR, integrando sensores, motores e missões |
+| [`raidens-electronics`](https://github.com/sesiraidens/raidens-electronics) | Cálculos e modelos de componentes eletrônicos |
+| [`raidens-3d`](https://github.com/sesiraidens/raidens-3d) | Peças 3D paramétricas geradas em OpenSCAD |
+| [`raidens-ros`](https://github.com/sesiraidens/raidens-ros) | Estrutura de nodes e tópicos ROS 2 |
+| [`raidens-snippets`](https://github.com/sesiraidens/raidens-snippets) | Trechos de código prontos para copiar e colar |
 
 ---
 
-## Dependencias
+<div align="center">
 
-Nenhuma dependencia externa. Apenas Python 3.7+ padrao.
+<img src="https://sesiraidens.github.io/portifolio/assets/logo_color-aNRVU26Y.png" alt="Logo RAIDENS" width="56">
 
----
+**Equipe RAIDENS** · SESI 192 Alumínio/SP
 
-## Equipe
+[![Email](https://img.shields.io/badge/Email-sesiraidens%40gmail.com-D14836?style=flat-square&logo=gmail&logoColor=white)](mailto:sesiraidens@gmail.com)
+[![Linktree](https://img.shields.io/badge/Linktree-sesiraidens-39E06B?style=flat-square&logo=linktree&logoColor=white)](https://linktr.ee/sesiraidens)
+[![GitHub](https://img.shields.io/badge/GitHub-sesiraidens-181717?style=flat-square&logo=github&logoColor=white)](https://github.com/sesiraidens)
 
-**RAIDENS - SESI Aluminio 192**
+<sub>Desenvolvido pela equipe RAIDENS para fins educacionais. Licenciado sob MIT.</sub>
 
-Desenvolvido para uso interno da equipe. Licenciado sob MIT.
+</div>
